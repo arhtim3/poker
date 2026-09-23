@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>テキサスホールデム</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>♠ テキサスホールデム</h1>
+    <div class="info">
+      <span id="hand-no">ハンド #0</span>
+      <span id="blinds">ブラインド 10/20</span>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="table-wrap">
+      <div class="table" id="table">
+        <div class="center">
+          <div class="pot" id="pot">ポット: 0</div>
+          <div class="board" id="board"></div>
+          <div class="message" id="message"></div>
+        </div>
+        <!-- seats are rendered by ui.js -->
+      </div>
+
+      <div class="controls" id="controls">
+        <button id="btn-fold" class="btn danger">フォールド</button>
+        <button id="btn-call" class="btn">チェック</button>
+        <div class="raise-box">
+          <input type="range" id="raise-range" min="0" max="0" step="10" />
+          <div class="raise-row">
+            <input type="number" id="raise-input" min="0" step="10" />
+            <button id="btn-raise" class="btn accent">レイズ</button>
+          </div>
+          <div class="quick">
+            <button data-frac="0.5" class="chip-btn">1/2 ポット</button>
+            <button data-frac="1" class="chip-btn">ポット</button>
+            <button data-frac="all" class="chip-btn">オールイン</button>
+          </div>
+        </div>
+        <button id="btn-next" class="btn primary hidden">次のハンドへ</button>
+      </div>
+    </section>
+
+    <aside class="log-panel">
+      <h2>ログ</h2>
+      <ol id="log"></ol>
+    </aside>
+  </main>
+
+  <div class="overlay" id="overlay">
+    <div class="dialog">
+      <h2 id="overlay-title">テキサスホールデム</h2>
+      <p id="overlay-text">CPU 3人と対戦します。持ち点 1000、ブラインド 10/20 から開始。<br />10ハンドごとにブラインドが倍になります。</p>
+      <button id="btn-start" class="btn primary">ゲーム開始</button>
+    </div>
+  </div>
+
+  <script src="js/evaluator.js"></script>
+  <script src="js/engine.js"></script>
+  <script src="js/ui.js"></script>
+</body>
+</html>

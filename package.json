@@ -1,0 +1,9 @@
+{
+  "name": "poker",
+  "version": "1.0.0",
+  "description": "ブラウザで遊べるテキサスホールデム（CPU対戦）",
+  "private": true,
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  }
+}
