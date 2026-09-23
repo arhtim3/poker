@@ -711,8 +711,16 @@ button {
     border-radius: 90px;
   }
 
+  .message {
+    max-width: 48%;
+    font-size: 0.85rem;
+    word-break: keep-all;
+  }
+
   .center {
     gap: 6px;
+    padding-top: calc(var(--small-h) * 0.5);
+    padding-bottom: calc(var(--card-h) * 0.6);
   }
 
   .seat {
@@ -792,6 +800,68 @@ button {
 
   .log-panel.open {
     transform: none;
+  }
+}
+
+/* Short phone screens (e.g. inside an in-app viewer): tighten everything so
+   the table and controls still fit without scrolling. */
+@media (max-width: 600px) and (max-height: 700px) {
+  :root {
+    --card-w: 48px;
+    --card-h: 68px;
+    --small-w: 30px;
+    --small-h: 42px;
+    --overlap: -14px;
+  }
+
+  .topbar {
+    padding-block: 6px;
+  }
+
+  .table {
+    margin: 50px 4px 56px;
+  }
+
+  .plate .action {
+    min-height: 1em;
+  }
+
+  .face.front .rank,
+  .face.front .suit {
+    font-size: 1.1rem;
+  }
+
+  .deck {
+    display: none;
+  }
+
+  .seat.pos-1,
+  .seat.pos-3 {
+    top: 34%;
+  }
+
+  .center {
+    gap: 4px;
+  }
+
+  .controls {
+    padding: 6px;
+  }
+
+  .panel {
+    gap: 6px;
+  }
+
+  .actions .btn {
+    padding: 9px 4px;
+  }
+
+  .chip-btn {
+    padding: 4px;
+  }
+
+  .sizer input[type="number"] {
+    padding: 4px 8px;
   }
 }
 

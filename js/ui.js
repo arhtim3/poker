@@ -130,8 +130,11 @@
     front.innerHTML = `<span class="rank">${Eval.rankLabel(card.rank)}</span><span class="suit">${Eval.SUITS[card.suit]}</span>`;
   }
 
+  // Where cards come from and go back to (the pot when the deck is hidden
+  // on short screens).
   function deckRect() {
-    return els.deck.getBoundingClientRect();
+    const r = els.deck.getBoundingClientRect();
+    return r.width ? r : els.potBox.getBoundingClientRect();
   }
 
   // Flies a card element from where it is back toward the deck and removes it.
