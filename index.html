@@ -3,15 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>テキサスホールデム</title>
+  <title>ドローポーカー</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header class="topbar">
-    <h1>♠ テキサスホールデム</h1>
+    <h1>♠ ドローポーカー</h1>
     <div class="info">
       <span id="hand-no">ハンド #0</span>
-      <span id="blinds">ブラインド 10/20</span>
+      <span id="ante">参加料 10</span>
     </div>
   </header>
 
@@ -19,8 +19,8 @@
     <section class="table-wrap">
       <div class="table" id="table">
         <div class="center">
+          <div class="phase" id="phase"></div>
           <div class="pot" id="pot">ポット: 0</div>
-          <div class="board" id="board"></div>
           <div class="message" id="message"></div>
         </div>
         <!-- seats are rendered by ui.js -->
@@ -29,7 +29,7 @@
       <div class="controls" id="controls">
         <button id="btn-fold" class="btn danger">フォールド</button>
         <button id="btn-call" class="btn">チェック</button>
-        <div class="raise-box">
+        <div class="raise-box" id="raise-box">
           <input type="range" id="raise-range" min="0" max="0" step="10" />
           <div class="raise-row">
             <input type="number" id="raise-input" min="0" step="10" />
@@ -40,6 +40,10 @@
             <button data-frac="1" class="chip-btn">ポット</button>
             <button data-frac="all" class="chip-btn">オールイン</button>
           </div>
+        </div>
+        <div class="draw-box hidden" id="draw-box">
+          <p class="draw-hint">交換したいカードをタップして選んでください</p>
+          <button id="btn-draw" class="btn primary">交換しない</button>
         </div>
         <button id="btn-next" class="btn primary hidden">次のハンドへ</button>
       </div>
@@ -53,8 +57,8 @@
 
   <div class="overlay" id="overlay">
     <div class="dialog">
-      <h2 id="overlay-title">テキサスホールデム</h2>
-      <p id="overlay-text">CPU 3人と対戦します。持ち点 1000、ブラインド 10/20 から開始。<br />10ハンドごとにブラインドが倍になります。</p>
+      <h2 id="overlay-title">ドローポーカー</h2>
+      <p id="overlay-text">CPU 3人と対戦する5枚ドローポーカーです。<br />5枚配られたら参加料を払ってベット、好きな枚数を1回だけ交換して、もう一度ベット。最後に役の強さで勝負します。<br />持ち点 1000、参加料 10 から開始（10ハンドごとに倍）。</p>
       <button id="btn-start" class="btn primary">ゲーム開始</button>
     </div>
   </div>

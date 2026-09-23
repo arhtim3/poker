@@ -1,16 +1,24 @@
-// Texas Hold'em game engine (no DOM). The UI plugs in through `hooks`:
+// Five-card draw poker engine (no DOM). The UI plugs in through `hooks`:
 //   hooks.update(game)                     -> re-render
 //   hooks.log(message)                     -> append to the log
 //   hooks.wait(ms)                         -> Promise for pacing
 //   hooks.humanAction(game, player, opts)  -> Promise<{type, amount?}>
+//   hooks.humanDraw(game, player)          -> Promise<number[]> (indices to discard)
+//
+// Hand flow: deal 5 cards -> ante -> betting -> draw -> betting -> showdown.
 (function (root) {
   'use strict';
 
   const Eval =
     typeof module !== 'undefined' && module.exports ? require('./evaluator.js') : root.PokerEval;
 
-  const STREETS = ['preflop', 'flop', 'turn', 'river'];
-  const STREET_NAMES = { preflop: 'プリフロップ', flop: 'フロップ', turn: 'ターン', river: 'リバー' };
+  const PHASE_NAMES = {
+    ante: '参加料',
+    bet1: '1回目のベット',
+    draw: 'カード交換',
+    bet2: '2回目のベット',
+    showdown: 'ショーダウン',
+  };
 
   const CPU_STYLES = [
     { aggression: 0.6, looseness: 0.5 },
@@ -28,15 +36,15 @@
           log() {},
           wait: () => Promise.resolve(),
           humanAction: null,
+          humanDraw: null,
         },
         hooks
       );
       this.random = options.random || Math.random;
       this.startingChips = options.startingChips || 1000;
-      this.smallBlind = options.smallBlind || 10;
-      this.bigBlind = options.bigBlind || this.smallBlind * 2;
-      this.blindUpEvery = options.blindUpEvery || 10;
-      this.equityIterations = options.equityIterations || 250;
+      this.ante = options.ante || 10;
+      this.anteUpEvery = options.anteUpEvery || 10;
+      this.equityIterations = options.equityIterations || 300;
       const names = options.names || ['あなた', 'CPU 1', 'CPU 2', 'CPU 3'];
       const humanIndex = options.humanIndex === undefined ? 0 : options.humanIndex;
       this.players = names.map((name, i) => ({
@@ -46,6 +54,8 @@
         style: CPU_STYLES[i % CPU_STYLES.length],
         chips: this.startingChips,
         hand: [],
+        discarded: [],
+        drew: null,
         bet: 0,
         totalBet: 0,
         folded: false,
@@ -57,17 +67,21 @@
       }));
       this.dealer = -1;
       this.handNumber = 0;
-      this.board = [];
       this.deck = [];
-      this.street = null;
+      this.phase = null;
       this.currentBet = 0;
-      this.minRaise = this.bigBlind;
+      this.minRaise = this.betUnit;
       this.toAct = -1;
       this.winners = [];
       this.handOver = true;
     }
 
     // ---- helpers ---------------------------------------------------------
+
+    // Smallest bet / raise increment.
+    get betUnit() {
+      return this.ante * 2;
+    }
 
     get pot() {
       return this.players.reduce((sum, p) => sum + p.totalBet, 0);
@@ -137,19 +151,20 @@
       if (this.isGameOver()) return false;
       this.startHand();
       this.hooks.update(this);
+      await this.hooks.wait(500);
 
-      for (const street of STREETS) {
-        if (street !== 'preflop') this.dealStreet(street);
-        this.hooks.update(this);
+      this.collectAntes();
+      this.hooks.update(this);
 
-        if (this.canAct().length >= 2 || (street === 'preflop' && this.needsAction())) {
-          await this.bettingRound(street);
-        }
-        this.endStreet();
-        this.hooks.update(this);
-
+      for (const phase of ['bet1', 'draw', 'bet2']) {
         if (this.inHand().length === 1) break;
-        if (street !== 'river') await this.hooks.wait(this.canAct().length < 2 ? 900 : 400);
+        this.phase = phase;
+        this.resetStreet();
+        this.hooks.update(this);
+        if (phase === 'draw') await this.drawRound();
+        else if (this.canAct().length >= 2) await this.bettingRound();
+        this.resetStreet();
+        this.hooks.update(this);
       }
 
       this.finishHand();
@@ -160,18 +175,19 @@
 
     startHand() {
       this.handNumber++;
-      if (this.blindUpEvery && this.handNumber > 1 && (this.handNumber - 1) % this.blindUpEvery === 0) {
-        this.smallBlind *= 2;
-        this.bigBlind *= 2;
-        this.hooks.log(`ブラインドが ${this.smallBlind}/${this.bigBlind} に上がりました`);
+      if (this.anteUpEvery && this.handNumber > 1 && (this.handNumber - 1) % this.anteUpEvery === 0) {
+        this.ante *= 2;
+        this.hooks.log(`参加料が ${this.ante} に上がりました`);
       }
       this.handOver = false;
-      this.board = [];
       this.winners = [];
+      this.phase = 'deal';
       this.deck = Eval.shuffle(Eval.createDeck(), this.random);
       for (const p of this.players) {
         p.out = p.chips === 0;
         p.hand = [];
+        p.discarded = [];
+        p.drew = null;
         p.bet = 0;
         p.totalBet = 0;
         p.folded = p.out;
@@ -183,49 +199,33 @@
 
       const active = (p) => !p.out;
       this.dealer = this.nextIndex(this.dealer, active);
-      const headsUp = this.players.filter(active).length === 2;
-      const sbIndex = headsUp ? this.dealer : this.nextIndex(this.dealer, active);
-      const bbIndex = this.nextIndex(sbIndex, active);
-      this.sbIndex = sbIndex;
-      this.bbIndex = bbIndex;
-
       this.hooks.log(`―― ハンド #${this.handNumber} ――`);
-      const sb = this.players[sbIndex];
-      const bb = this.players[bbIndex];
-      this.putChips(sb, this.smallBlind);
-      sb.lastAction = `SB ${sb.bet}`;
-      this.putChips(bb, this.bigBlind);
-      bb.lastAction = `BB ${bb.bet}`;
-      this.currentBet = this.bigBlind;
-      this.minRaise = this.bigBlind;
-
-      for (let round = 0; round < 2; round++) {
-        for (const p of this.players) if (active(p)) p.hand.push(this.draw());
+      for (let round = 0; round < 5; round++) {
+        for (let step = 1; step <= this.players.length; step++) {
+          const p = this.players[(this.dealer + step) % this.players.length];
+          if (active(p)) p.hand.push(this.draw());
+        }
       }
-      this.street = 'preflop';
+      for (const p of this.players) Eval.sortHand(p.hand);
     }
 
-    needsAction() {
-      return this.canAct().some((p) => p.bet < this.currentBet);
+    collectAntes() {
+      this.phase = 'ante';
+      for (const p of this.inHand()) {
+        this.putChips(p, this.ante);
+        p.lastAction = p.allIn ? `参加料 ${p.totalBet} (オールイン)` : `参加料 ${p.totalBet}`;
+      }
+      this.hooks.log(`全員が参加料 ${this.ante} を支払いました`);
     }
 
-    dealStreet(street) {
-      this.street = street;
-      this.draw(); // burn
-      const count = street === 'flop' ? 3 : 1;
-      for (let i = 0; i < count; i++) this.board.push(this.draw());
-      for (const p of this.players) {
-        p.bet = 0;
-        if (!p.folded && !p.allIn) p.lastAction = '';
-      }
+    resetStreet() {
+      for (const p of this.players) p.bet = 0;
       this.currentBet = 0;
-      this.minRaise = this.bigBlind;
-      this.hooks.log(`${STREET_NAMES[street]}: ${this.board.map(Eval.cardToString).join(' ')}`);
+      this.minRaise = this.betUnit;
     }
 
-    async bettingRound(street) {
-      const start = street === 'preflop' ? this.bbIndex : this.dealer;
-      let index = this.nextIndex(start, (p) => !p.folded && !p.out && !p.allIn);
+    async bettingRound() {
+      let index = this.nextIndex(this.dealer, (p) => !p.folded && !p.out && !p.allIn);
       const acted = new Set();
       const needs = (p) =>
         !p.folded && !p.out && !p.allIn && (!acted.has(p) || p.bet < this.currentBet);
@@ -256,6 +256,38 @@
         index = (index + 1) % this.players.length;
       }
       this.toAct = -1;
+    }
+
+    async drawRound() {
+      this.hooks.log('カード交換');
+      for (let step = 1; step <= this.players.length; step++) {
+        const index = (this.dealer + step) % this.players.length;
+        const player = this.players[index];
+        if (player.folded || player.out) continue;
+        this.toAct = index;
+        this.hooks.update(this);
+        let discards;
+        if (player.isHuman) {
+          discards = await this.hooks.humanDraw(this, player);
+        } else {
+          await this.hooks.wait(500 + this.random() * 400);
+          discards = Eval.chooseDiscards(player.hand);
+        }
+        this.exchange(player, discards);
+        this.toAct = -1;
+        this.hooks.update(this);
+      }
+    }
+
+    exchange(player, discards) {
+      const unique = [...new Set(discards)].filter((i) => Number.isInteger(i) && i >= 0 && i < player.hand.length);
+      player.discarded = unique.map((i) => player.hand[i]);
+      player.hand = player.hand.filter((c, i) => !unique.includes(i));
+      for (let k = 0; k < unique.length; k++) player.hand.push(this.draw());
+      Eval.sortHand(player.hand);
+      player.drew = unique.length;
+      player.lastAction = unique.length === 0 ? '交換なし' : `${unique.length}枚交換`;
+      this.hooks.log(`${player.name}: ${player.lastAction}`);
     }
 
     // Returns true when the action raised the bet (others must act again).
@@ -301,11 +333,6 @@
       return false;
     }
 
-    endStreet() {
-      for (const p of this.players) p.bet = 0;
-      this.currentBet = 0;
-    }
-
     // Split contributions into main pot and side pots.
     buildPots() {
       const levels = [...new Set(this.players.filter((p) => p.totalBet > 0).map((p) => p.totalBet))].sort(
@@ -346,11 +373,10 @@
         winnings.set(winner, amount);
         this.hooks.log(`${winner.name} が ${amount} チップを獲得`);
       } else {
-        // Showdown
-        this.street = 'showdown';
+        this.phase = 'showdown';
         for (const p of contenders) {
           p.showCards = true;
-          p.result = Eval.evaluate(p.hand.concat(this.board));
+          p.result = Eval.evaluate(p.hand);
           this.hooks.log(`${p.name}: ${p.hand.map(Eval.cardToString).join(' ')} → ${p.result.name}`);
         }
         const pots = this.buildPots();
@@ -393,17 +419,31 @@
     async cpuAction(player, opts) {
       await this.hooks.wait(600 + this.random() * 600);
       const opponents = this.inHand().length - 1;
-      const equity = Eval.estimateEquity(player.hand, this.board, opponents, this.equityIterations, this.random);
+      const beforeDraw = this.phase === 'bet1';
+      const equity = Eval.estimateEquity(
+        player.hand,
+        beforeDraw ? Eval.chooseDiscards(player.hand) : [],
+        opponents,
+        this.equityIterations,
+        this.random,
+        player.discarded
+      );
       // 1.0 means "average hand at this table"; >1 is better than average.
-      const strength = equity * (opponents + 1);
+      let strength = equity * (opponents + 1);
+      // Opponents who stood pat probably hold something real.
+      if (!beforeDraw) {
+        for (const p of this.inHand()) if (p !== player && p.drew === 0) strength *= 0.75;
+      }
+      const adjustedEquity = strength / (opponents + 1);
       const pot = this.pot;
       const { aggression, looseness } = player.style;
       const r = this.random();
       const potOdds = opts.toCall / (pot + opts.toCall);
+      const unit = this.betUnit;
 
       const sizedRaise = (fraction) => {
         const base = opts.isBet ? 0 : this.currentBet;
-        const amount = base + Math.max(this.bigBlind, Math.round((pot * fraction) / this.bigBlind) * this.bigBlind);
+        const amount = base + Math.max(unit, Math.round((pot * fraction) / unit) * unit);
         return { type: 'raise', amount: Math.max(opts.minRaiseTo, Math.min(opts.maxRaiseTo, amount)) };
       };
 
@@ -416,18 +456,18 @@
       }
 
       if (opts.canRaise && strength > 2.1 - aggression * 0.3 && r < 0.5 + aggression * 0.4) {
-        return sizedRaise(equity > 0.8 ? 1.2 : 0.8);
+        return sizedRaise(adjustedEquity > 0.8 ? 1.2 : 0.8);
       }
       const margin = 0.08 - looseness * 0.1;
-      if (equity > potOdds + margin) return { type: 'call' };
+      if (adjustedEquity > potOdds + margin) return { type: 'call' };
       // Cheap calls with some looseness.
-      if (opts.toCall <= this.bigBlind && r < looseness * 0.6) return { type: 'call' };
+      if (opts.toCall <= unit && r < looseness * 0.6) return { type: 'call' };
       if (opts.canRaise && r < aggression * 0.04) return sizedRaise(0.8); // bluff raise
       return { type: 'fold' };
     }
   }
 
-  const api = { PokerGame, STREET_NAMES };
+  const api = { PokerGame, PHASE_NAMES };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.PokerEngine = api;
 })(typeof window !== 'undefined' ? window : globalThis);

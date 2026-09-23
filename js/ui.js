@@ -2,23 +2,26 @@
 (function () {
   'use strict';
 
-  const { PokerGame } = window.PokerEngine;
+  const { PokerGame, PHASE_NAMES } = window.PokerEngine;
   const Eval = window.PokerEval;
   const $ = (id) => document.getElementById(id);
 
   const els = {
     table: $('table'),
-    board: $('board'),
+    phase: $('phase'),
     pot: $('pot'),
     message: $('message'),
     handNo: $('hand-no'),
-    blinds: $('blinds'),
+    ante: $('ante'),
     log: $('log'),
     fold: $('btn-fold'),
     call: $('btn-call'),
     raise: $('btn-raise'),
+    raiseBox: $('raise-box'),
     range: $('raise-range'),
     input: $('raise-input'),
+    drawBox: $('draw-box'),
+    drawBtn: $('btn-draw'),
     next: $('btn-next'),
     quick: document.querySelectorAll('.chip-btn'),
     overlay: $('overlay'),
@@ -29,12 +32,13 @@
 
   let game = null;
   let pendingAction = null; // { resolve, opts }
+  let pendingDraw = null; // { resolve, selected: Set<index> }
   let dealtKeys = new Set(); // cards already on screen (animate only new ones)
   let renderedHand = 0;
 
   // ---- rendering ---------------------------------------------------------
 
-  function cardEl(card, { hidden = false, small = false, highlight = false, key = null } = {}) {
+  function cardEl(card, { hidden = false, small = false, key = null } = {}) {
     const el = document.createElement('div');
     el.className = 'card' + (small ? ' small' : '');
     if (key && !dealtKeys.has(key)) {
@@ -46,17 +50,11 @@
       return el;
     }
     if (card.suit === 1 || card.suit === 2) el.classList.add('red');
-    if (highlight) el.classList.add('highlight');
     el.innerHTML = `<span class="rank">${Eval.rankLabel(card.rank)}</span><span class="suit">${Eval.SUITS[card.suit]}</span>`;
     return el;
   }
 
-  function isWinningCard(card) {
-    if (!game.handOver || game.winners.length === 0) return false;
-    return game.winners.some(
-      (w) => w.player.result && w.player.result.cards.some((c) => c.rank === card.rank && c.suit === card.suit)
-    );
-  }
+  const cardKey = (c) => `${c.rank}${c.suit}`;
 
   function render() {
     if (!game) return;
@@ -65,43 +63,36 @@
       dealtKeys = new Set();
     }
     els.handNo.textContent = `ハンド #${game.handNumber}`;
-    els.blinds.textContent = `ブラインド ${game.smallBlind}/${game.bigBlind}`;
+    els.ante.textContent = `参加料 ${game.ante}`;
+    els.phase.textContent = game.handOver ? '' : PHASE_NAMES[game.phase] || '';
     const potTotal = game.handOver ? game.winners.reduce((t, w) => t + w.amount, 0) : game.pot;
     els.pot.textContent = `ポット: ${potTotal}`;
-
-    els.board.innerHTML = '';
-    for (let i = 0; i < 5; i++) {
-      const card = game.board[i];
-      if (card) els.board.appendChild(cardEl(card, { highlight: isWinningCard(card), key: `b${i}` }));
-      else {
-        const ph = document.createElement('div');
-        ph.className = 'card placeholder';
-        els.board.appendChild(ph);
-      }
-    }
 
     els.table.querySelectorAll('.seat, .bet').forEach((el) => el.remove());
     const winnerIds = new Set(game.winners.map((w) => w.player.id));
     game.players.forEach((p, i) => {
       const seat = document.createElement('div');
-      seat.className = `seat pos-${i}`;
+      seat.className = `seat pos-${i} ${p.isHuman ? 'human' : 'cpu'}`;
       if (p.folded) seat.classList.add('folded');
       if (game.toAct === i) seat.classList.add('turn');
       if (game.handOver && winnerIds.has(p.id)) seat.classList.add('winner');
+      if (p.isHuman && pendingDraw) seat.classList.add('choosing');
 
       const cards = document.createElement('div');
       cards.className = 'cards';
       if (!p.out) {
-        p.hand.forEach((c, k) =>
-          cards.appendChild(
-            cardEl(c, {
-              hidden: !p.showCards,
-              small: !p.isHuman,
-              highlight: p.showCards && winnerIds.has(p.id) && isWinningCard(c),
-              key: `p${i}-${k}-${p.showCards}`,
-            })
-          )
-        );
+        p.hand.forEach((c, k) => {
+          const el = cardEl(c, {
+            hidden: !p.showCards,
+            small: !p.isHuman,
+            key: `p${i}-${p.showCards ? cardKey(c) : k}`,
+          });
+          if (p.isHuman) {
+            el.dataset.index = k;
+            if (pendingDraw && pendingDraw.selected.has(k)) el.classList.add('selected');
+          }
+          cards.appendChild(el);
+        });
       }
 
       const plate = document.createElement('div');
@@ -135,10 +126,8 @@
 
     // Live hand name for the human.
     const human = game.human;
-    if (!game.handOver && human && !human.folded && game.board.length >= 3) {
-      els.message.textContent = `あなたの役: ${Eval.evaluate(human.hand.concat(game.board)).name}`;
-    } else if (!game.handOver) {
-      els.message.textContent = '';
+    if (!game.handOver && human && !human.out && human.hand.length === 5) {
+      els.message.textContent = human.folded ? '' : `あなたの役: ${Eval.evaluate(human.hand).name}`;
     }
   }
 
@@ -150,7 +139,11 @@
     els.log.scrollTop = els.log.scrollHeight;
   }
 
-  // ---- human input -------------------------------------------------------
+  // ---- human input: betting ----------------------------------------------
+
+  function showBetControls(show) {
+    [els.fold, els.call, els.raiseBox].forEach((el) => el.classList.toggle('hidden', !show));
+  }
 
   function setControlsEnabled(enabled) {
     [els.fold, els.call, els.raise, els.range, els.input, ...els.quick].forEach((el) => (el.disabled = !enabled));
@@ -175,6 +168,7 @@
   function humanAction(g, player, opts) {
     return new Promise((resolve) => {
       pendingAction = { resolve, opts };
+      showBetControls(true);
       setControlsEnabled(true);
       els.fold.disabled = opts.canCheck; // no reason to fold when checking is free
       els.call.textContent = opts.canCheck
@@ -187,15 +181,15 @@
       if (opts.canRaise) {
         els.range.min = opts.minRaiseTo;
         els.range.max = opts.maxRaiseTo;
-        els.range.step = Math.min(g.bigBlind / 2, 10) || 1;
+        els.range.step = g.ante;
         els.input.min = opts.minRaiseTo;
         els.input.max = opts.maxRaiseTo;
+        els.input.step = g.ante;
         setRaiseValue(opts.minRaiseTo);
       } else {
         raiseEls.forEach((el) => (el.disabled = true));
         els.raise.textContent = opts.isBet ? 'ベット' : 'レイズ';
       }
-      els.message.textContent = els.message.textContent || 'あなたの番です';
     });
   }
 
@@ -222,14 +216,61 @@
       if (frac === 'all') return setRaiseValue(pendingAction.opts.maxRaiseTo);
       const human = game.human;
       const toCall = pendingAction.opts.toCall;
+      const unit = game.ante;
       // Pot-sized raise: call first, then raise by the resulting pot times frac.
-      const target = game.currentBet + Math.round(((game.pot + toCall) * Number(frac)) / 10) * 10;
+      const target = game.currentBet + Math.round(((game.pot + toCall) * Number(frac)) / unit) * unit;
       setRaiseValue(Math.max(target, human.bet + toCall));
     })
   );
 
+  // ---- human input: draw -------------------------------------------------
+
+  function updateDrawButton() {
+    const n = pendingDraw.selected.size;
+    els.drawBtn.textContent = n === 0 ? '交換しない' : `${n}枚交換する`;
+  }
+
+  function humanDraw() {
+    return new Promise((resolve) => {
+      pendingDraw = { resolve, selected: new Set() };
+      showBetControls(false);
+      els.drawBox.classList.remove('hidden');
+      updateDrawButton();
+      render();
+    });
+  }
+
+  function toggleDrawCard(index) {
+    if (!pendingDraw) return;
+    const sel = pendingDraw.selected;
+    if (sel.has(index)) sel.delete(index);
+    else sel.add(index);
+    updateDrawButton();
+    render();
+  }
+
+  els.table.addEventListener('click', (e) => {
+    const card = e.target.closest('.seat.human .card');
+    if (card && card.dataset.index !== undefined) toggleDrawCard(Number(card.dataset.index));
+  });
+
+  els.drawBtn.addEventListener('click', () => {
+    if (!pendingDraw) return;
+    const { resolve, selected } = pendingDraw;
+    pendingDraw = null;
+    els.drawBox.classList.add('hidden');
+    showBetControls(true);
+    resolve([...selected]);
+  });
+
   document.addEventListener('keydown', (e) => {
-    if (!pendingAction || e.target === els.input) return;
+    if (e.target === els.input) return;
+    if (pendingDraw) {
+      if (e.key >= '1' && e.key <= '5') toggleDrawCard(Number(e.key) - 1);
+      else if (e.key === 'Enter' || e.key === 'd') els.drawBtn.click();
+      return;
+    }
+    if (!pendingAction) return;
     if (e.key === 'f' && !els.fold.disabled) els.fold.click();
     else if (e.key === 'c') els.call.click();
     else if (e.key === 'r' && !els.raise.disabled) els.raise.click();
@@ -249,6 +290,7 @@
 
   async function playNext() {
     els.next.classList.add('hidden');
+    showBetControls(true);
     await game.playHand();
     showResult();
 
@@ -272,7 +314,7 @@
     els.overlay.classList.add('hidden');
     els.log.innerHTML = '';
     els.message.textContent = '';
-    game = new PokerGame({}, { update: render, log, wait, humanAction });
+    game = new PokerGame({}, { update: render, log, wait, humanAction, humanDraw });
     setControlsEnabled(false);
     playNext();
   }

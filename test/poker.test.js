@@ -30,10 +30,33 @@ test('compares hands correctly', () => {
 });
 
 test('equity estimate is sensible', () => {
-  const aces = Eval.estimateEquity(cards('As Ah'), [], 1, 2000);
-  const junk = Eval.estimateEquity(cards('7s 2h'), [], 1, 2000);
-  assert.ok(aces > 0.78 && aces < 0.9, `AA ~85%: ${aces}`);
-  assert.ok(junk < 0.4, `72o weak: ${junk}`);
+  const trips = Eval.estimateEquity(cards('As Ah Ad 7c 2h'), [3, 4], 1, 2000);
+  const junk = Eval.estimateEquity(cards('Ks 9h 7d 4c 2s'), [1, 2, 3, 4], 1, 2000);
+  assert.ok(trips > 0.8, `trip aces strong: ${trips}`);
+  assert.ok(junk < 0.4, `king high weak: ${junk}`);
+});
+
+test('CPU discards follow draw-poker basics', () => {
+  const pick = (str) => Eval.chooseDiscards(cards(str)).sort();
+  assert.deepStrictEqual(pick('2h 5h 9h Jh Kh'), [], 'pat flush');
+  assert.deepStrictEqual(pick('7h 7d 5c 5s Kh'), [4], 'two pair keeps both pairs');
+  assert.deepStrictEqual(pick('7h 7d 4c 5s Kh'), [2, 3, 4], 'one pair draws three');
+  assert.deepStrictEqual(pick('2h 5h 9h Jh Kc'), [4], 'four to a flush');
+  assert.deepStrictEqual(pick('9c Th Jd Qs 3h'), [4], 'four to a straight');
+  assert.deepStrictEqual(pick('Ac 9h 7d 4s 2h'), [1, 2, 3, 4], 'keep the ace');
+});
+
+test('exchange replaces exactly the chosen cards', () => {
+  const game = new PokerGame({ names: ['A', 'B'], humanIndex: -1 });
+  game.startHand();
+  const p = game.players[0];
+  const kept = p.hand.slice(2);
+  const deckBefore = game.deck.length;
+  game.exchange(p, [0, 1]);
+  assert.strictEqual(p.hand.length, 5);
+  assert.strictEqual(p.drew, 2);
+  assert.strictEqual(game.deck.length, deckBefore - 2);
+  for (const c of kept) assert.ok(p.hand.includes(c));
 });
 
 test('side pots are built from contributions', () => {

@@ -1,4 +1,4 @@
-// Card utilities and hand evaluation for Texas Hold'em.
+// Card utilities and hand evaluation for five-card draw poker.
 // Works both in the browser (window.PokerEval) and in Node (module.exports).
 (function (root) {
   'use strict';
@@ -94,7 +94,7 @@
     return score;
   }
 
-  // Best five-card hand out of 5-7 cards.
+  // Best five-card hand out of 5 or more cards.
   function evaluate(cards) {
     if (cards.length < 5) throw new Error('evaluate needs at least 5 cards');
     let best = -1;
@@ -120,40 +120,77 @@
     return a.rank === b.rank && a.suit === b.suit;
   }
 
-  // Monte Carlo estimate of the chance that `hole` wins against
-  // `opponents` random hands, given the current `board`. Ties count
-  // as a fractional win.
-  function estimateEquity(hole, board, opponents, iterations = 300, random = Math.random) {
+  // Which cards (indices into `hand`) a sensible player throws away in
+  // five-card draw.
+  function chooseDiscards(hand) {
+    const { category } = evaluate(hand);
+    // Straight, flush, full house, straight flush: stand pat.
+    if (category >= 4 && category !== 7) return [];
+
+    const counts = new Map();
+    for (const c of hand) counts.set(c.rank, (counts.get(c.rank) || 0) + 1);
+    // Pairs, trips, two pair, quads: keep the matched cards.
+    if (category >= 1) return hand.map((c, i) => i).filter((i) => counts.get(hand[i].rank) === 1);
+
+    // Four to a flush.
+    for (let suit = 0; suit < 4; suit++) {
+      const off = hand.map((c, i) => i).filter((i) => hand[i].suit !== suit);
+      if (off.length === 1) return off;
+    }
+
+    // Four to a straight (ace counts high or low).
+    for (let low = 1; low <= 10; low++) {
+      const inWindow = (r) => (r >= low && r <= low + 4) || (low === 1 && r === 14);
+      const out = hand.map((c, i) => i).filter((i) => !inWindow(hand[i].rank));
+      if (out.length === 1) return out;
+    }
+
+    // Nothing: keep the highest card.
+    let best = 0;
+    hand.forEach((c, i) => {
+      if (c.rank > hand[best].rank) best = i;
+    });
+    return hand.map((c, i) => i).filter((i) => i !== best);
+  }
+
+  function replaceCards(hand, discards, deck) {
+    const kept = hand.filter((c, i) => !discards.includes(i));
+    return kept.concat(deck.splice(0, discards.length));
+  }
+
+  // Monte Carlo estimate of the chance that `hand` wins against
+  // `opponents` players holding random hands who draw sensibly.
+  // `discards`: the cards this player will throw away (none after the draw).
+  // `dead`: cards known to be out of the deck (e.g. our own discards).
+  // Ties count as a fractional win.
+  function estimateEquity(hand, discards, opponents, iterations = 300, random = Math.random, dead = []) {
     if (opponents <= 0) return 1;
-    const known = hole.concat(board);
+    const known = hand.concat(dead);
     const remaining = createDeck().filter((c) => !known.some((k) => sameCard(k, c)));
-    const needBoard = 5 - board.length;
     let total = 0;
 
     for (let it = 0; it < iterations; it++) {
-      // Partial shuffle: only draw as many cards as needed.
-      const draw = needBoard + opponents * 2;
-      for (let i = 0; i < draw; i++) {
-        const j = i + Math.floor(random() * (remaining.length - i));
-        [remaining[i], remaining[j]] = [remaining[j], remaining[i]];
-      }
-      const fullBoard = board.concat(remaining.slice(0, needBoard));
-      const myScore = evaluate(hole.concat(fullBoard)).score;
+      const deck = shuffle(remaining.slice(), random);
+      const mine = eval5(replaceCards(hand, discards, deck));
       let bestOpp = -1;
       let ties = 0;
       for (let o = 0; o < opponents; o++) {
-        const start = needBoard + o * 2;
-        const oppScore = evaluate(remaining.slice(start, start + 2).concat(fullBoard)).score;
+        const start = deck.splice(0, 5);
+        const oppScore = eval5(replaceCards(start, chooseDiscards(start), deck));
         if (oppScore > bestOpp) {
           bestOpp = oppScore;
           ties = 0;
         }
         if (oppScore === bestOpp) ties++;
       }
-      if (myScore > bestOpp) total += 1;
-      else if (myScore === bestOpp) total += 1 / (ties + 1);
+      if (mine > bestOpp) total += 1;
+      else if (mine === bestOpp) total += 1 / (ties + 1);
     }
     return total / iterations;
+  }
+
+  function sortHand(hand) {
+    return hand.sort((a, b) => b.rank - a.rank || a.suit - b.suit);
   }
 
   const api = {
@@ -166,6 +203,8 @@
     eval5,
     evaluate,
     estimateEquity,
+    chooseDiscards,
+    sortHand,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

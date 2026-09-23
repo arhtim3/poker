@@ -84,10 +84,12 @@ body {
   border-radius: 20px;
 }
 
-.board {
-  display: flex;
-  gap: 6px;
-  min-height: 84px;
+.phase {
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  text-transform: uppercase;
+  min-height: 1em;
 }
 
 .message {
@@ -109,7 +111,7 @@ body {
   width: 150px;
 }
 
-.seat.pos-0 { left: 50%; top: 100%; }
+.seat.pos-0 { left: 50%; top: 100%; width: 340px; }
 .seat.pos-1 { left: 0%; top: 50%; }
 .seat.pos-2 { left: 50%; top: 0%; }
 .seat.pos-3 { left: 100%; top: 50%; }
@@ -117,6 +119,41 @@ body {
 .seat .cards {
   display: flex;
   gap: 4px;
+}
+
+.seat.cpu .cards {
+  gap: 0;
+}
+
+.seat.cpu .card + .card {
+  margin-left: -18px;
+}
+
+.seat.human .card {
+  cursor: default;
+  transition: transform 0.12s ease;
+}
+
+.seat.human.choosing .card {
+  cursor: pointer;
+}
+
+.seat.human.choosing .card:hover {
+  transform: translateY(-4px);
+}
+
+.seat.human .card.selected {
+  transform: translateY(-16px);
+  opacity: 0.6;
+  box-shadow: 0 0 0 3px var(--accent), 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.seat.human .card.selected::after {
+  content: "交換";
+  position: absolute;
+  top: -20px;
+  font-size: 0.7rem;
+  color: var(--text);
 }
 
 .seat .plate {
@@ -197,7 +234,7 @@ body {
   color: var(--red);
 }
 
-.bet.pos-0 { left: 50%; top: 72%; transform: translateX(-50%); }
+.bet.pos-0 { left: 50%; top: 66%; transform: translateX(-50%); }
 .bet.pos-1 { left: 16%; top: 50%; transform: translateY(-50%); }
 .bet.pos-2 { left: 50%; top: 22%; transform: translateX(-50%); }
 .bet.pos-3 { right: 16%; top: 50%; transform: translateY(-50%); }
@@ -223,6 +260,10 @@ body {
   animation: deal 0.25s ease-out;
 }
 
+.card {
+  position: relative;
+}
+
 .card .rank {
   font-size: 1.4rem;
 }
@@ -245,9 +286,16 @@ body {
   height: 62px;
 }
 
+/* CPU cards overlap, so show the index in the top-left corner. */
+.card.small {
+  justify-content: flex-start;
+  align-items: flex-start;
+  padding: 4px 0 0 5px;
+}
+
 .card.small .rank,
 .card.small .suit {
-  font-size: 1.1rem;
+  font-size: 0.95rem;
 }
 
 .card.highlight {
@@ -345,6 +393,19 @@ body {
   cursor: not-allowed;
 }
 
+.draw-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.draw-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 .hidden {
   display: none !important;
 }
@@ -436,7 +497,9 @@ body {
   .card { width: 40px; height: 58px; }
   .card .rank, .card .suit { font-size: 1rem; }
   .card.small { width: 34px; height: 48px; }
-  .card.small .rank, .card.small .suit { font-size: 0.85rem; }
-  .board { min-height: 58px; gap: 3px; }
+  .card.small { padding: 3px 0 0 3px; }
+  .card.small .rank, .card.small .suit { font-size: 0.75rem; }
+  .seat.pos-0 { width: 100%; }
+  .seat.cpu .card + .card { margin-left: -18px; }
   .btn { min-width: 90px; padding: 10px 12px; }
 }
