@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>ドローポーカー</title>
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -12,6 +12,7 @@
     <div class="info">
       <span id="hand-no">ハンド #0</span>
       <span id="ante">参加料 10</span>
+      <button id="btn-log" class="log-toggle" aria-expanded="false" aria-controls="log-panel">ログ</button>
     </div>
   </header>
 
@@ -19,21 +20,24 @@
     <section class="table-wrap">
       <div class="table" id="table">
         <div class="center">
+          <div class="deck" id="deck" aria-hidden="true"></div>
           <div class="phase" id="phase"></div>
-          <div class="pot" id="pot">ポット: 0</div>
+          <div class="pot" id="pot-box">ポット <b id="pot">0</b></div>
           <div class="message" id="message"></div>
         </div>
-        <!-- seats are rendered by ui.js -->
+        <!-- seats and bet chips are created by ui.js -->
       </div>
 
       <div class="controls" id="controls">
-        <button id="btn-fold" class="btn danger">フォールド</button>
-        <button id="btn-call" class="btn">チェック</button>
-        <div class="raise-box" id="raise-box">
-          <input type="range" id="raise-range" min="0" max="0" step="10" />
-          <div class="raise-row">
-            <input type="number" id="raise-input" min="0" step="10" />
-            <button id="btn-raise" class="btn accent">レイズ</button>
+        <div class="panel bet-panel" id="bet-panel">
+          <div class="actions">
+            <button id="btn-fold" class="btn danger">フォールド</button>
+            <button id="btn-call" class="btn">チェック</button>
+            <button id="btn-raise" class="btn accent">ベット</button>
+          </div>
+          <div class="sizer">
+            <input type="range" id="raise-range" min="0" max="0" step="10" aria-label="ベット額" />
+            <input type="number" id="raise-input" min="0" step="10" aria-label="ベット額" />
           </div>
           <div class="quick">
             <button data-frac="0.5" class="chip-btn">1/2 ポット</button>
@@ -41,16 +45,21 @@
             <button data-frac="all" class="chip-btn">オールイン</button>
           </div>
         </div>
-        <div class="draw-box hidden" id="draw-box">
+        <div class="panel draw-panel is-off" id="draw-panel">
           <p class="draw-hint">交換したいカードをタップして選んでください</p>
           <button id="btn-draw" class="btn primary">交換しない</button>
         </div>
-        <button id="btn-next" class="btn primary hidden">次のハンドへ</button>
+        <div class="panel next-panel is-off" id="next-panel">
+          <button id="btn-next" class="btn primary">次のハンドへ</button>
+        </div>
       </div>
     </section>
 
-    <aside class="log-panel">
-      <h2>ログ</h2>
+    <aside class="log-panel" id="log-panel">
+      <div class="log-head">
+        <h2>ログ</h2>
+        <button id="btn-log-close" class="log-close">閉じる</button>
+      </div>
       <ol id="log"></ol>
     </aside>
   </main>

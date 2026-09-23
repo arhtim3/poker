@@ -151,22 +151,29 @@
       if (this.isGameOver()) return false;
       this.startHand();
       this.hooks.update(this);
-      await this.hooks.wait(500);
+      await this.hooks.wait(1300); // let the deal animation play
 
       this.collectAntes();
       this.hooks.update(this);
+      await this.hooks.wait(700);
 
       for (const phase of ['bet1', 'draw', 'bet2']) {
         if (this.inHand().length === 1) break;
         this.phase = phase;
         this.resetStreet();
         this.hooks.update(this);
+        await this.hooks.wait(450);
         if (phase === 'draw') await this.drawRound();
         else if (this.canAct().length >= 2) await this.bettingRound();
         this.resetStreet();
         this.hooks.update(this);
       }
 
+      if (this.inHand().length > 1) {
+        this.revealHands();
+        this.hooks.update(this);
+        await this.hooks.wait(1200);
+      }
       this.finishHand();
       this.handOver = true;
       this.hooks.update(this);
@@ -362,6 +369,16 @@
       return merged;
     }
 
+    revealHands() {
+      this.phase = 'showdown';
+      for (const p of this.inHand()) {
+        p.showCards = true;
+        p.result = Eval.evaluate(p.hand);
+        p.lastAction = p.result.name;
+        this.hooks.log(`${p.name}: ${p.hand.map(Eval.cardToString).join(' ')} → ${p.result.name}`);
+      }
+    }
+
     finishHand() {
       const contenders = this.inHand();
       const winnings = new Map();
@@ -373,12 +390,7 @@
         winnings.set(winner, amount);
         this.hooks.log(`${winner.name} が ${amount} チップを獲得`);
       } else {
-        this.phase = 'showdown';
-        for (const p of contenders) {
-          p.showCards = true;
-          p.result = Eval.evaluate(p.hand);
-          this.hooks.log(`${p.name}: ${p.hand.map(Eval.cardToString).join(' ')} → ${p.result.name}`);
-        }
+        if (this.phase !== 'showdown') this.revealHands();
         const pots = this.buildPots();
         pots.forEach((pot, i) => {
           const best = Math.max(...pot.eligible.map((p) => p.result.score));
