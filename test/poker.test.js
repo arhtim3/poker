@@ -89,3 +89,32 @@ test('full CPU-only games conserve chips and finish', async () => {
     assert.ok(game.isGameOver(), `game ${seed} ended within 500 hands`);
   }
 });
+
+test('all hands are revealed when everyone else folds', async () => {
+  let checked = 0;
+  for (let seed = 1; seed <= 40 && checked < 5; seed++) {
+    let s = seed;
+    const random = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+    const game = new PokerGame({ names: ['A', 'B', 'C', 'D'], humanIndex: -1, random, equityIterations: 40 });
+    for (let h = 0; h < 30 && !game.isGameOver(); h++) {
+      await game.playHand();
+      const dealt = game.players.filter((p) => p.hand.length === 5);
+      if (dealt.filter((p) => !p.folded).length === 1) {
+        for (const p of dealt) {
+          assert.ok(p.showCards, `${p.name} revealed`);
+          assert.ok(p.result, `${p.name} has a hand name`);
+        }
+        checked++;
+      }
+    }
+  }
+  assert.ok(checked > 0, 'saw at least one hand won by folds');
+});
+
+test('dealing is uniformly random (chi-square)', () => {
+  const { runChecks } = require('../scripts/check-randomness.js');
+  const { results, duplicates } = runChecks(20000);
+  assert.strictEqual(duplicates, 0);
+  // A fair deck fails any single check at this level about once in 10,000 runs.
+  for (const r of results) assert.ok(r.p > 1e-4, `${r.name}: p=${r.p}`);
+});

@@ -317,6 +317,7 @@
       const seat = seats[i];
       const root = seat.root;
       root.classList.toggle('folded', p.folded && !p.out);
+      root.classList.toggle('revealed', !!(p.showCards && p.result));
       root.classList.toggle('turn', game.toAct === i);
       root.classList.toggle('winner', game.handOver && winnerIds.has(p.id));
       root.classList.toggle('showdown', !!(p.result && p.showCards && !p.folded));
@@ -521,9 +522,11 @@
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
   function showResult() {
+    // 'reveal' means the hand ended because everyone else folded.
+    const byFold = game.phase === 'reveal';
     const parts = game.winners.map((w) => {
-      const hand = w.player.result ? `(${w.player.result.name})` : '';
-      return `${w.player.name} +${w.amount} ${hand}`;
+      const reason = byFold ? '(他の全員がフォールド)' : `(${w.player.result.name})`;
+      return `${w.player.name} +${w.amount} ${reason}`;
     });
     setText(els.message, parts.join(' / '));
   }

@@ -175,6 +175,11 @@ button {
   opacity: 0.4;
 }
 
+/* Folded hands turned face up at the end stay readable. */
+.seat.folded.revealed {
+  opacity: 0.7;
+}
+
 .seat .cards {
   display: flex;
   gap: 6px;

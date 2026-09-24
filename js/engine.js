@@ -18,6 +18,7 @@
     draw: 'カード交換',
     bet2: '2回目のベット',
     showdown: 'ショーダウン',
+    reveal: '手札公開',
   };
 
   const CPU_STYLES = [
@@ -40,7 +41,7 @@
         },
         hooks
       );
-      this.random = options.random || Math.random;
+      this.random = options.random || Eval.secureRandom;
       this.startingChips = options.startingChips || 1000;
       this.ante = options.ante || 10;
       this.anteUpEvery = options.anteUpEvery || 10;
@@ -169,11 +170,11 @@
         this.hooks.update(this);
       }
 
-      if (this.inHand().length > 1) {
-        this.revealHands();
-        this.hooks.update(this);
-        await this.hooks.wait(1200);
-      }
+      // Everyone's cards are turned face up at the end of every hand,
+      // including when all but one player folded.
+      this.revealHands();
+      this.hooks.update(this);
+      await this.hooks.wait(1200);
       this.finishHand();
       this.handOver = true;
       this.hooks.update(this);
@@ -189,6 +190,7 @@
       this.handOver = false;
       this.winners = [];
       this.phase = 'deal';
+      this.revealed = false;
       this.deck = Eval.shuffle(Eval.createDeck(), this.random);
       for (const p of this.players) {
         p.out = p.chips === 0;
@@ -369,17 +371,23 @@
       return merged;
     }
 
+    // Turns every dealt hand face up, folded ones included. Folded hands
+    // are shown for information only and never win a pot.
     revealHands() {
-      this.phase = 'showdown';
-      for (const p of this.inHand()) {
+      this.phase = this.inHand().length > 1 ? 'showdown' : 'reveal';
+      this.revealed = true;
+      for (const p of this.players) {
+        if (p.out || p.hand.length === 0) continue;
         p.showCards = true;
         p.result = Eval.evaluate(p.hand);
-        p.lastAction = p.result.name;
-        this.hooks.log(`${p.name}: ${p.hand.map(Eval.cardToString).join(' ')} → ${p.result.name}`);
+        p.lastAction = p.result.name; // the dimmed seat already shows it folded
+        const note = p.folded ? ' (フォールド)' : '';
+        this.hooks.log(`${p.name}: ${p.hand.map(Eval.cardToString).join(' ')} → ${p.result.name}${note}`);
       }
     }
 
     finishHand() {
+      if (!this.revealed) this.revealHands();
       const contenders = this.inHand();
       const winnings = new Map();
 
@@ -390,7 +398,6 @@
         winnings.set(winner, amount);
         this.hooks.log(`${winner.name} が ${amount} チップを獲得`);
       } else {
-        if (this.phase !== 'showdown') this.revealHands();
         const pots = this.buildPots();
         pots.forEach((pot, i) => {
           const best = Math.max(...pot.eligible.map((p) => p.result.score));

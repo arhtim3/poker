@@ -34,7 +34,22 @@
     return deck;
   }
 
-  function shuffle(deck, random = Math.random) {
+  // Uniform float in [0, 1) with 53 random bits from the platform's
+  // cryptographic RNG (crypto.getRandomValues), which is available in
+  // browsers and Node. Falls back to Math.random only if it is missing.
+  const cryptoSource =
+    typeof globalThis !== 'undefined' && globalThis.crypto && globalThis.crypto.getRandomValues
+      ? globalThis.crypto
+      : null;
+  const randomWords = new Uint32Array(2);
+  function secureRandom() {
+    if (!cryptoSource) return Math.random();
+    cryptoSource.getRandomValues(randomWords);
+    return (randomWords[0] * 2 ** 21 + (randomWords[1] >>> 11)) / 2 ** 53;
+  }
+
+  // Fisher-Yates: every ordering of the deck is equally likely.
+  function shuffle(deck, random = secureRandom) {
     for (let i = deck.length - 1; i > 0; i--) {
       const j = Math.floor(random() * (i + 1));
       [deck[i], deck[j]] = [deck[j], deck[i]];
@@ -163,7 +178,7 @@
   // `discards`: the cards this player will throw away (none after the draw).
   // `dead`: cards known to be out of the deck (e.g. our own discards).
   // Ties count as a fractional win.
-  function estimateEquity(hand, discards, opponents, iterations = 300, random = Math.random, dead = []) {
+  function estimateEquity(hand, discards, opponents, iterations = 300, random = secureRandom, dead = []) {
     if (opponents <= 0) return 1;
     const known = hand.concat(dead);
     const remaining = createDeck().filter((c) => !known.some((k) => sameCard(k, c)));
@@ -199,6 +214,7 @@
     rankLabel,
     cardToString,
     createDeck,
+    secureRandom,
     shuffle,
     eval5,
     evaluate,
